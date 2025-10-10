@@ -31,7 +31,7 @@ TOTAL_SHS_CLIENTS = 95359  # TODO - IMPLEMENT % Based System for SHS side
                            # TODO - FIND A WAY TO BEST TUNE RATIO
 
 # Your SHS data
-TOTAL_GENERAL_POP = 0  # TODO - Changed from 500000
+TOTAL_GENERAL_POP = 500000  # TODO - Changed from 500000
                             # Sample of general population (adjust as needed)
 
 # Random seed for reproducibility

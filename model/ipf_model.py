@@ -5,7 +5,7 @@ Trains on IPF-generated synthetic data with realistic demographic patterns.
 
 Data features:
 - Gender (binary)
-- Age (numeric)
+- Age (one-hot encoded: 7 age ranges from 0-17 to 65+)
 - Drug, Mental, Indigenous, DV (binary risk factors)
 - Location (one-hot encoded: ACT, NSW, NT, QLD, SA, TAS, VIC, WA)
 - SHS_Client (binary indicator)
@@ -64,10 +64,30 @@ for col in X.columns:
     if X[col].dtype == bool:
         X[col] = X[col].astype(int)
 
-# Identify numeric columns to scale
-numeric_cols = ['Age']  # Only Age needs scaling, rest are binary/one-hot
+# Reverse mapping: numeric age -> categorical age range
+age_reverse_mapping = {
+    10: '0-17',
+    21: '18-24',
+    30: '25-34',
+    40: '35-44',
+    50: '45-54',
+    60: '55-64',
+    70: '65+'
+}
 
-print(f"   Features ({len(feature_cols)}): {feature_cols}")
+# Convert numeric Age to categorical for one-hot encoding
+X['Age_Category'] = X['Age'].map(age_reverse_mapping)
+print(f"   Age distribution: {X['Age_Category'].value_counts().to_dict()}")
+
+# One-hot encode Age (drop_first=False to keep all categories)
+age_dummies = pd.get_dummies(X['Age_Category'], prefix='Age', dtype=int)
+print(f"   Created {len(age_dummies.columns)} one-hot encoded age features: {list(age_dummies.columns)}")
+
+# Drop original Age columns and add one-hot encoded age features
+X = X.drop(['Age', 'Age_Category'], axis=1)
+X = pd.concat([X, age_dummies], axis=1)
+
+print(f"   Total features after encoding ({len(X.columns)}): {list(X.columns)}")
 
 # ============================================================================
 # 3) Train/validation/test split
@@ -89,20 +109,16 @@ print(f"   Validation: {len(X_val):,} samples")
 print(f"   Test: {len(X_test):,} samples")
 
 # ============================================================================
-# 4) Scale numeric features
+# 4) Feature scaling (optional - all features are now binary/one-hot encoded)
 # ============================================================================
-print("\n4. Scaling numeric features...")
+print("\n4. Preparing features for model...")
 
-scaler = StandardScaler()
+# No scaling needed - all features are binary or one-hot encoded
 X_train_scaled = X_train.copy()
 X_val_scaled = X_val.copy()
 X_test_scaled = X_test.copy()
 
-X_train_scaled['Age'] = scaler.fit_transform(X_train[['Age']])
-X_val_scaled['Age'] = scaler.transform(X_val[['Age']])
-X_test_scaled['Age'] = scaler.transform(X_test[['Age']])
-
-print(f"   Scaled Age feature (mean: {scaler.mean_[0]:.1f}, std: {np.sqrt(scaler.var_[0]):.1f})")
+print(f"   All features are binary/one-hot encoded (no scaling required)")
 
 # ============================================================================
 # 5) Build FNN model
@@ -165,7 +181,7 @@ X_test_array = X_test_scaled.values
 history = model.fit(
     X_train_array, y_train,
     validation_data=(X_val_array, y_val),
-    epochs=100,
+    epochs=15,
     batch_size=256,
     callbacks=[early_stopping, reduce_lr],
     verbose=1
@@ -260,14 +276,9 @@ plt.show()
 # 9) Save model
 # ============================================================================
 print("\n9. Saving model...")
-model.save('homelessness_risk_model.keras')
-print("   Model saved to: homelessness_risk_model.keras")
-
-# Save scaler
-import pickle
-with open('age_scaler.pkl', 'wb') as f:
-    pickle.dump(scaler, f)
-print("   Scaler saved to: age_scaler.pkl")
+model.save('homelessness_risk_model.h5')
+print("   Model saved to: homelessness_risk_model.h5")
+print("   Note: No scaler needed - all features are binary/one-hot encoded")
 
 print("\n" + "="*80)
 print("TRAINING COMPLETE!")
