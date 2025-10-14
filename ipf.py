@@ -22,6 +22,9 @@ import pandas as pd
 from ipfn import ipfn
 from itertools import product
 
+import warnings
+warnings.filterwarnings("ignore")
+
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
@@ -41,7 +44,7 @@ RANDOM_SEED = 42
 ref_rates = pd.read_csv('/Users/arona/Documents/GitHub/Visionary-Model/model/data/ipf_reference_rates.csv')
 
 # ============================================================================
-# YOUR SHS CLIENT DATA (June 2025)
+# SHS CLIENT DATA (June 2025)
 # ============================================================================
 
 # Gender marginals
@@ -58,22 +61,22 @@ shs_gender = {
     
 shs_age_gender = pd.DataFrame({
     'Male': {
-        '0-17': 13821 - 184,  # 0-9 + 10-17
-        '18-24': 4647 - 184,
-        '25-34': 4466 - 184,
-        '35-44': 5423 - 184,
-        '45-54': 5014 - 184,
-        '55-64': 3123 - 184,
-        '65+': 1869 - 184 + 2
+        '0-17': 13358,  
+        '18-24': 4491,
+        '25-34': 4316,
+        '35-44': 5241,
+        '45-54': 4846,
+        '55-64': 3018,
+        '65+': 1807
     },
     'Female': {
-        '0-17': 14429 - 325,  # 0-9 + 10-17
-        '18-24': 9650 - 325,
-        '25-34': 12011 - 325 - 3, # 3 removed to balance rounding
-        '35-44': 11695 - 325,
-        '45-54': 7128 - 325,
-        '55-64': 3527 - 325,
-        '65+': 2120 - 325
+        '0-17': 13886,  
+        '18-24': 9287,
+        '25-34': 11559,
+        '35-44': 11255,
+        '45-54': 6860,
+        '55-64': 3395,
+        '65+': 2040
     }
 })
 
@@ -182,84 +185,93 @@ def run_ipf_for_population(df_seed, marginals_dict, population_name):
     print(f"Initial seed: {len(df_seed)} combinations")
     print(f"Initial total: {df_seed['count'].sum():.0f}")
 
+    # Define fixed category orders for all variables
+    cats = {
+        'Gender': ['Male', 'Female'],
+        'Age': ['0-17', '18-24', '25-34', '35-44', '45-54', '55-64', '65+'],
+        'Location': ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT'],
+        'Drug': ['Drug', 'No_Drug'],
+        'Mental': ['Mental', 'Non_Mental'],
+        'Indigenous': ['Indigenous', 'Non_Indigenous'],
+        'DV': ['DV', 'No_DV'],
+        'Homeless': ['Homeless', 'Not_Homeless'],
+    }
+
+    # Convert all columns to strings to avoid categorical dtype issues
+    for col in ['Gender', 'Age', 'Location', 'Drug', 'Mental', 'Indigenous', 'DV', 'Homeless']:
+        df_seed[col] = df_seed[col].astype(str)
+
+    def to_series_2d(df2, row, col):
+        """Build plain (non-categorical) Series with clean MultiIndex"""
+        # df2: your 2D table with row index = row categories, columns = col categories
+        s = (df2.reindex(index=cats[row], columns=cats[col])  # ensure full grid
+                .fillna(0)
+                .stack())
+        s.index = pd.MultiIndex.from_product([cats[row], cats[col]], names=[row, col])
+        return s.astype(float)
+
     # Prepare aggregates
     aggregates = []
     dimensions = []
 
-    # 1. Gender
-    agg_gender = df_seed.groupby('Gender')['count'].sum()
-    for gender in ['Male', 'Female']:
-        agg_gender.loc[gender] = marginals_dict['gender'][gender]
-    aggregates.append(agg_gender)
-    dimensions.append(['Gender'])
+    # NOTE: Removed standalone Gender constraint - it's redundant and causes cycling
+    # when all other constraints are (variable × Gender)
 
-    # 2. Age x Gender
-    agg_age_gender = df_seed.groupby(['Age', 'Gender'])['count'].sum().unstack(fill_value=0)
-    for age in agg_age_gender.index:
-        for gender in agg_age_gender.columns:
-            agg_age_gender.loc[age, gender] = marginals_dict['age_gender'].loc[age, gender]
-    aggregates.append(agg_age_gender.stack())
+    # 1. Age x Gender
+    aggregates.append(to_series_2d(marginals_dict['age_gender'], 'Age', 'Gender'))
     dimensions.append(['Age', 'Gender'])
 
-    # 3. Location x Gender
-    agg_location_gender = df_seed.groupby(['Location', 'Gender'])['count'].sum().unstack(fill_value=0)
-    for loc in agg_location_gender.index:
-        for gender in agg_location_gender.columns:
-            agg_location_gender.loc[loc, gender] = marginals_dict['location_gender'].loc[loc, gender]
-    aggregates.append(agg_location_gender.stack())
+    # 2. Location x Gender
+    aggregates.append(to_series_2d(marginals_dict['location_gender'], 'Location', 'Gender'))
     dimensions.append(['Location', 'Gender'])
 
-    # 4. Drug x Gender
-    agg_drug_gender = df_seed.groupby(['Drug', 'Gender'])['count'].sum().unstack(fill_value=0)
-    for drug in agg_drug_gender.index:
-        for gender in agg_drug_gender.columns:
-            agg_drug_gender.loc[drug, gender] = marginals_dict['drug_gender'].loc[drug, gender]
-    aggregates.append(agg_drug_gender.stack())
+    # 3. Drug x Gender
+    aggregates.append(to_series_2d(marginals_dict['drug_gender'], 'Drug', 'Gender'))
     dimensions.append(['Drug', 'Gender'])
 
-    # 5. Mental x Gender
-    agg_mental_gender = df_seed.groupby(['Mental', 'Gender'])['count'].sum().unstack(fill_value=0)
-    for mental in agg_mental_gender.index:
-        for gender in agg_mental_gender.columns:
-            agg_mental_gender.loc[mental, gender] = marginals_dict['mental_gender'].loc[mental, gender]
-    aggregates.append(agg_mental_gender.stack())
+    # 4. Mental x Gender
+    aggregates.append(to_series_2d(marginals_dict['mental_gender'], 'Mental', 'Gender'))
     dimensions.append(['Mental', 'Gender'])
 
-    # 6. Indigenous x Gender
-    agg_indigenous_gender = df_seed.groupby(['Indigenous', 'Gender'])['count'].sum().unstack(fill_value=0)
-    for indigenous in agg_indigenous_gender.index:
-        for gender in agg_indigenous_gender.columns:
-            agg_indigenous_gender.loc[indigenous, gender] = marginals_dict['indigenous_gender'].loc[indigenous, gender]
-    aggregates.append(agg_indigenous_gender.stack())
+    # 5. Indigenous x Gender
+    aggregates.append(to_series_2d(marginals_dict['indigenous_gender'], 'Indigenous', 'Gender'))
     dimensions.append(['Indigenous', 'Gender'])
 
-    # 7. Homeless x Gender
-    agg_homeless_gender = df_seed.groupby(['Homeless', 'Gender'])['count'].sum().unstack(fill_value=0)
-    for homeless in agg_homeless_gender.index:
-        for gender in agg_homeless_gender.columns:
-            agg_homeless_gender.loc[homeless, gender] = marginals_dict['homeless_gender'].loc[homeless, gender]
-    aggregates.append(agg_homeless_gender.stack())
+    # 6. DV x Gender
+    aggregates.append(to_series_2d(marginals_dict['dv_gender'], 'DV', 'Gender'))
+    dimensions.append(['DV', 'Gender'])
+
+    # 7. Homeless x Gender (TARGET variable)
+    aggregates.append(to_series_2d(marginals_dict['homeless_gender'], 'Homeless', 'Gender'))
     dimensions.append(['Homeless', 'Gender'])
 
-    # 8. DV x Gender
-    agg_dv_gender = df_seed.groupby(['DV', 'Gender'])['count'].sum().unstack(fill_value=0)
-    for dv in agg_dv_gender.index:
-        for gender in agg_dv_gender.columns:
-            agg_dv_gender.loc[dv, gender] = marginals_dict['dv_gender'].loc[dv, gender]
-    aggregates.append(agg_dv_gender.stack())
-    dimensions.append(['DV', 'Gender'])
+    # Sanity assertions before running IPF
+    print(f"\nValidating marginal constraints...")
+
+    # Level names must match exactly
+    for s, dims in zip(aggregates, dimensions):
+        assert list(s.index.names) == dims, f"Index names mismatch: {s.index.names} != {dims}"
+
+    # Target totals must all be identical
+    totals = [float(s.sum()) for s in aggregates]
+    assert max(totals) - min(totals) == 0, f"Target totals don't match: {totals}"
+
+    print(f"  All checks passed. Total: {totals[0]:.0f}")
 
     print(f"\nRunning IPF with {len(aggregates)} marginal constraints...")
 
-    # Run IPF (specify weight_col='count')
+    # Run IPF with improved settings for convergence
+    # - max_iteration: increased to 5000 to allow proper convergence
+    # - convergence_rate: tightened to 1e-8 for better accuracy
+    # - rate_tolerance: set to 0 to prevent early stopping while still far from convergence
     IPF = ipfn.ipfn(
         df_seed,
         aggregates,
         dimensions,
         weight_col='count',
         max_iteration=100,
-        convergence_rate=1e-6,
-        rate_tolerance=1e-8,
+        convergence_rate=1e-8,
+        rate_tolerance=0,
         verbose=2
     )
 
@@ -287,27 +299,100 @@ def run_ipf_for_population(df_seed, marginals_dict, population_name):
         df_fitted = result
 
     print(f"\nIPF completed for {population_name}")
-    print(f"\n IPF completed for {population_name}")
     print(f"Final total: {df_fitted['count'].sum():.0f}")
+
+    # Check margin errors to verify convergence quality
+    print(f"\n{'='*60}")
+    print("MARGIN ERROR CHECK:")
+    print(f"{'='*60}")
+
+    def margin_err(df, features, target):
+        """Calculate L1 and relative errors for a marginal"""
+        got = df.groupby(features)['count'].sum()
+        tgt = target.copy()
+        # Align indices
+        got, tgt = got.align(tgt, join='outer', fill_value=0)
+        l1_err = (got - tgt).abs().sum()
+        rel_err = (got - tgt).abs().div(tgt.replace(0, np.nan)).max()
+        return l1_err, rel_err
+
+    # Check all constraints
+    constraint_names = [
+        'Age×Gender', 'Location×Gender', 'Drug×Gender', 'Mental×Gender',
+        'Indigenous×Gender', 'DV×Gender', 'Homeless×Gender'
+    ]
+
+    for feat, tgt, name in zip(dimensions, aggregates, constraint_names):
+        l1, rel = margin_err(df_fitted, feat, tgt)
+        print(f"{name:20s}: L1={l1:8.3f}, max rel err={rel:.3e}")
+
+    print(f"{'='*60}\n")
 
     return df_fitted
 
 
+def randomized_round_to_total(weights, target_total):
+    """
+    Randomized rounding that preserves the target total exactly
+
+    Args:
+        weights: Array of float weights
+        target_total: Integer total to achieve
+
+    Returns:
+        Array of integers that sum to target_total
+    """
+    weights = np.array(weights, dtype=float)
+    floors = np.floor(weights).astype(int)
+    remainder = target_total - floors.sum()
+
+    if remainder <= 0:
+        return floors
+
+    # Calculate fractional parts
+    fracs = weights - floors
+    frac_sum = fracs.sum()
+
+    if frac_sum > 0:
+        probs = fracs / frac_sum
+        # Sample indices to increment
+        indices = np.random.choice(len(weights), size=int(remainder), replace=False, p=probs)
+        floors[indices] += 1
+
+    return floors
+
+
 def expand_to_individuals(df_fitted):
     """
-    Convert fitted counts to individual records
+    Convert fitted counts to individual records using randomized rounding
+    that preserves marginal constraints
     """
     print("\nExpanding to individual records...")
 
-    # Round and convert to integers
-    df_fitted['count'] = df_fitted['count'].round().astype(int)
+    df_work = df_fitted.copy()
 
-    # Filter out zero/negative counts
-    df_fitted = df_fitted[df_fitted['count'] > 0].copy()
+    # Apply randomized rounding within each (Homeless, Gender) slice
+    # to preserve the most critical marginal constraint
+    for homeless in ['Homeless', 'Not_Homeless']:
+        for gender in ['Male', 'Female']:
+            mask = (df_work['Homeless'] == homeless) & (df_work['Gender'] == gender)
+            if mask.sum() == 0:
+                continue
 
-    # Expand
+            slice_weights = df_work.loc[mask, 'count'].values
+            slice_total = int(np.round(slice_weights.sum()))
+
+            if slice_total > 0:
+                rounded = randomized_round_to_total(slice_weights, slice_total)
+                df_work.loc[mask, 'count'] = rounded
+
+    # Convert to integers and filter zeros
+    df_work['count'] = df_work['count'].astype(int)
+    df_work = df_work[df_work['count'] > 0].copy()
+
+    # Expand to individual records
     records = []
-    for idx, row in df_fitted.iterrows():
+    for _, row in df_work.iterrows():
         count = int(row['count'])
         for _ in range(count):
             records.append({
