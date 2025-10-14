@@ -30,10 +30,6 @@ from itertools import product
 TOTAL_SHS_CLIENTS = 95359  # TODO - IMPLEMENT % Based System for SHS side
                            # TODO - FIND A WAY TO BEST TUNE RATIO
 
-# Your SHS data
-TOTAL_GENERAL_POP = 500000  # TODO - Changed from 500000
-                            # Sample of general population (adjust as needed)
-
 # Random seed for reproducibility
 RANDOM_SEED = 42
 
@@ -56,33 +52,37 @@ shs_gender = {
 
 # TODO - Verify distribution
 # Age x Gender (converting your age brackets to our groups)
+
+# NOTE - Removed fron age-gender by equal amount to keep total consistent with SHS clients
+    # It appears SHS data was flawed
+    
 shs_age_gender = pd.DataFrame({
     'Male': {
-        '0-17': 8306 + 5515,  # 0-9 + 10-17
-        '18-24': 4647,
-        '25-34': 4466,
-        '35-44': 5423,
-        '45-54': 5014,
-        '55-64': 3123,
-        '65+': 1869
+        '0-17': 13821 - 184,  # 0-9 + 10-17
+        '18-24': 4647 - 184,
+        '25-34': 4466 - 184,
+        '35-44': 5423 - 184,
+        '45-54': 5014 - 184,
+        '55-64': 3123 - 184,
+        '65+': 1869 - 184 + 2
     },
     'Female': {
-        '0-17': 7820 + 6609,  # 0-9 + 10-17
-        '18-24': 9650,
-        '25-34': 12011,
-        '35-44': 11695,
-        '45-54': 7128,
-        '55-64': 3527,
-        '65+': 2120
+        '0-17': 14429 - 325,  # 0-9 + 10-17
+        '18-24': 9650 - 325,
+        '25-34': 12011 - 325 - 3, # 3 removed to balance rounding
+        '35-44': 11695 - 325,
+        '45-54': 7128 - 325,
+        '55-64': 3527 - 325,
+        '65+': 2120 - 325
     }
 })
 
 # Location x Gender
 shs_location_gender = pd.DataFrame({
-    'Male': {'NSW': 9348, 'VIC': 13042, 'QLD': 7932, 'WA': 2583,
-             'SA': 2559, 'TAS': 1087, 'ACT': 837, 'NT': 1040},
-    'Female': {'NSW': 14831, 'VIC': 20425, 'QLD': 11852, 'WA': 5315,
-               'SA': 3784, 'TAS': 1265, 'ACT': 1162, 'NT': 2049}
+    'Male': {'NSW': 9019, 'VIC': 12584, 'QLD': 7653, 'WA': 2492,
+             'SA': 2469, 'TAS': 1049, 'ACT': 808, 'NT': 1003},
+    'Female': {'NSW': 14244, 'VIC': 19617, 'QLD': 11383, 'WA': 5105,
+               'SA': 3634, 'TAS': 1215, 'ACT': 1116, 'NT': 1968}
 })
 
 # Drug x Gender
@@ -115,141 +115,13 @@ shs_dv_gender = pd.DataFrame({
     'Female': {'DV': 28106, 'No_DV': 30176}
 })
 
-# ============================================================================
-# GENERAL POPULATION MARGINALS
-# ============================================================================
 
-def create_general_population_marginals():
-    """
-    Create marginal distributions for general (non-SHS) population
-    based on Australian demographics
-    """
-
-    # Gender (roughly equal)
-    gen_gender = {
-        'Male': int(TOTAL_GENERAL_POP * 0.495),
-        'Female': int(TOTAL_GENERAL_POP * 0.505)
-    }
-
-    # Age distribution (general population is older)
-    gen_age_gender = pd.DataFrame({
-        'Male': {
-            '0-17': int(gen_gender['Male'] * 0.220),  # 22% under 18
-            '18-24': int(gen_gender['Male'] * 0.097),
-            '25-34': int(gen_gender['Male'] * 0.140),
-            '35-44': int(gen_gender['Male'] * 0.133),
-            '45-54': int(gen_gender['Male'] * 0.125),
-            '55-64': int(gen_gender['Male'] * 0.115),
-            '65+': int(gen_gender['Male'] * 0.170)
-        },
-        'Female': {
-            '0-17': int(gen_gender['Female'] * 0.220),
-            '18-24': int(gen_gender['Female'] * 0.097),
-            '25-34': int(gen_gender['Female'] * 0.140),
-            '35-44': int(gen_gender['Female'] * 0.133),
-            '45-54': int(gen_gender['Female'] * 0.125),
-            '55-64': int(gen_gender['Female'] * 0.115),
-            '65+': int(gen_gender['Female'] * 0.170)
-        }
-    })
-
-    # Location (population distribution by state)
-    gen_location_gender = pd.DataFrame({
-        'Male': {
-            'NSW': int(gen_gender['Male'] * 0.320),
-            'VIC': int(gen_gender['Male'] * 0.260),
-            'QLD': int(gen_gender['Male'] * 0.200),
-            'WA': int(gen_gender['Male'] * 0.110),
-            'SA': int(gen_gender['Male'] * 0.070),
-            'TAS': int(gen_gender['Male'] * 0.020),
-            'ACT': int(gen_gender['Male'] * 0.017),
-            'NT': int(gen_gender['Male'] * 0.010)
-        },
-        'Female': {
-            'NSW': int(gen_gender['Female'] * 0.320),
-            'VIC': int(gen_gender['Female'] * 0.260),
-            'QLD': int(gen_gender['Female'] * 0.200),
-            'WA': int(gen_gender['Female'] * 0.110),
-            'SA': int(gen_gender['Female'] * 0.070),
-            'TAS': int(gen_gender['Female'] * 0.020),
-            'ACT': int(gen_gender['Female'] * 0.017),
-            'NT': int(gen_gender['Female'] * 0.010)
-        }
-    })
-
-    # Drug use (much lower in general population)
-    # Male: 4.4%, Female: 2.1% (substance use disorder)
-    gen_drug_gender = pd.DataFrame({
-        'Male': {
-            'Drug': int(gen_gender['Male'] * 0.044),
-            'No_Drug': int(gen_gender['Male'] * 0.956)
-        },
-        'Female': {
-            'Drug': int(gen_gender['Female'] * 0.021),
-            'No_Drug': int(gen_gender['Female'] * 0.979)
-        }
-    })
-
-    # Mental health (21.5% in general population)
-    gen_mental_gender = pd.DataFrame({
-        'Male': {
-            'Mental': int(gen_gender['Male'] * 0.215),
-            'Non_Mental': int(gen_gender['Male'] * 0.785)
-        },
-        'Female': {
-            'Mental': int(gen_gender['Female'] * 0.215),
-            'Non_Mental': int(gen_gender['Female'] * 0.785)
-        }
-    })
-
-    # Indigenous (3.8% of general population)
-    gen_indigenous_gender = pd.DataFrame({
-        'Male': {
-            'Indigenous': int(gen_gender['Male'] * 0.038),
-            'Non_Indigenous': int(gen_gender['Male'] * 0.962)
-        },
-        'Female': {
-            'Indigenous': int(gen_gender['Female'] * 0.038),
-            'Non_Indigenous': int(gen_gender['Female'] * 0.962)
-        }
-    })
-
-    # Homeless (very low in general population - use census rate of 0.48%)
-    gen_homeless_gender = pd.DataFrame({
-        'Male': {
-            'Homeless': int(gen_gender['Male'] * 0.0048),
-            'Not_Homeless': int(gen_gender['Male'] * 0.9952)
-        },
-        'Female': {
-            'Homeless': int(gen_gender['Female'] * 0.0048),
-            'Not_Homeless': int(gen_gender['Female'] * 0.9952)
-        }
-    })
-
-    # DV (women 23% lifetime IPV, men ~7%)
-    gen_dv_gender = pd.DataFrame({
-        'Male': {
-            'DV': int(gen_gender['Male'] * 0.073),
-            'No_DV': int(gen_gender['Male'] * 0.927)
-        },
-        'Female': {
-            'DV': int(gen_gender['Female'] * 0.230),
-            'No_DV': int(gen_gender['Female'] * 0.770)
-        }
-    })
-
-    return {
-        'gender': gen_gender,
-        'age_gender': gen_age_gender,
-        'location_gender': gen_location_gender,
-        'drug_gender': gen_drug_gender,
-        'mental_gender': gen_mental_gender,
-        'indigenous_gender': gen_indigenous_gender,
-        'homeless_gender': gen_homeless_gender,
-        'dv_gender': gen_dv_gender
-    }
-
-
+def check_col_sums(df2d, gender_totals, name):
+    diff = df2d.sum(axis=0) - pd.Series(gender_totals)
+    if not (diff.abs() < 1e-9).all():
+        print(f"[!] {name} off vs gender totals: {dict(diff)}")
+        
+        
 # ============================================================================
 # IPF IMPLEMENTATION
 # ============================================================================
@@ -385,10 +257,10 @@ def run_ipf_for_population(df_seed, marginals_dict, population_name):
         aggregates,
         dimensions,
         weight_col='count',
-        max_iteration=1000,
+        max_iteration=100,
         convergence_rate=1e-6,
         rate_tolerance=1e-8,
-        verbose=1
+        verbose=2
     )
 
     result = IPF.iteration()
@@ -397,6 +269,16 @@ def run_ipf_for_population(df_seed, marginals_dict, population_name):
     if isinstance(result, tuple):
         df_fitted = result[0]
         convergence_flag = result[1]
+
+        # When verbose=2, third element is a DataFrame with convergence history
+        if len(result) == 3:
+            convergence_df = result[2]
+            print(f"\n{'='*60}")
+            print("CONVERGENCE HISTORY:")
+            print(f"{'='*60}")
+            print(convergence_df.to_string())
+            print(f"{'='*60}\n")
+
         if convergence_flag == 0:
             print(f"  Warning: Maximum iterations reached without full convergence")
         else:
@@ -442,85 +324,6 @@ def expand_to_individuals(df_fitted):
 
     return pd.DataFrame(records)
 
-
-def apply_conditional_adjustments(df):
-    """
-    Apply known conditional probabilities to better reflect real-world correlations
-
-    Based on research:
-    - 42% of SHS drug users also have mental health issues
-    - 33% of SHS drug users have drug + mental + DV
-    - Young people (16-24) have higher mental health rates (38.8%)
-    """
-
-    print("\nApplying conditional probability adjustments...")
-
-    df = df.copy()
-    np.random.seed(RANDOM_SEED)
-
-    # For SHS population only
-    shs_mask = df['Population'] == 'SHS'
-
-    # 1. Drug + Mental correlation (42% overlap in SHS)
-    # Currently, independence would give ~8.6% * 32% = 2.75%
-    # We want 42% of drug users to have mental health issues
-    drug_users = shs_mask & (df['Drug'] == 'Drug')
-    drug_no_mental = drug_users & (df['Mental'] == 'Non_Mental')
-
-    # Calculate how many need to flip
-    n_drug_users = drug_users.sum()
-    current_with_mental = (drug_users & (df['Mental'] == 'Mental')).sum()
-    target_with_mental = int(n_drug_users * 0.42)
-    n_to_flip = max(0, target_with_mental - current_with_mental)
-
-    if n_to_flip > 0 and drug_no_mental.sum() > 0:
-        flip_idx = np.random.choice(
-            df[drug_no_mental].index,
-            size=min(n_to_flip, drug_no_mental.sum()),
-            replace=False
-        )
-        df.loc[flip_idx, 'Mental'] = 'Mental'
-        print(f"  - Adjusted {len(flip_idx)} drug users to have mental health issues")
-
-    # 2. Young people (18-24) higher mental health rates (38.8% vs 21.5% overall)
-    young_shs = shs_mask & (df['Age'] == '18-24')
-    young_no_mental = young_shs & (df['Mental'] == 'Non_Mental')
-
-    n_young = young_shs.sum()
-    current_young_mental = (young_shs & (df['Mental'] == 'Mental')).sum()
-    target_young_mental = int(n_young * 0.388)
-    n_to_flip_young = max(0, target_young_mental - current_young_mental)
-
-    if n_to_flip_young > 0 and young_no_mental.sum() > 0:
-        flip_idx = np.random.choice(
-            df[young_no_mental].index,
-            size=min(n_to_flip_young, young_no_mental.sum()),
-            replace=False
-        )
-        df.loc[flip_idx, 'Mental'] = 'Mental'
-        print(f"  - Adjusted {len(flip_idx)} young people to have mental health issues")
-
-    # 3. Indigenous higher substance use (25% vs 18.6%)
-    indigenous_shs = shs_mask & (df['Indigenous'] == 'Indigenous')
-    indigenous_no_drug = indigenous_shs & (df['Drug'] == 'No_Drug')
-
-    n_indigenous = indigenous_shs.sum()
-    current_indigenous_drug = (indigenous_shs & (df['Drug'] == 'Drug')).sum()
-    target_indigenous_drug = int(n_indigenous * 0.15)  # Approximate from 25% illicit to problematic
-    n_to_flip_indig = max(0, target_indigenous_drug - current_indigenous_drug)
-
-    if n_to_flip_indig > 0 and indigenous_no_drug.sum() > 0:
-        flip_idx = np.random.choice(
-            df[indigenous_no_drug].index,
-            size=min(n_to_flip_indig, indigenous_no_drug.sum()),
-            replace=False
-        )
-        df.loc[flip_idx, 'Drug'] = 'Drug'
-        print(f"  - Adjusted {len(flip_idx)} Indigenous people to have drug issues")
-
-    return df
-
-
 def convert_to_binary(df):
     """
     Convert categorical variables to binary/numeric for model training
@@ -552,7 +355,6 @@ def convert_to_binary(df):
     df_encoded['Mental'] = (df_encoded['Mental'] == 'Mental').astype(int)
     df_encoded['Indigenous'] = (df_encoded['Indigenous'] == 'Indigenous').astype(int)
     df_encoded['DV'] = (df_encoded['DV'] == 'DV').astype(int)
-    df_encoded['SHS_Client'] = (df_encoded['Population'] == 'SHS').astype(int)
 
     # Target variable (Homeless)
     df_encoded['Homeless'] = (df_encoded['Homeless'] == 'Homeless').astype(int)
@@ -625,8 +427,14 @@ def main():
     print("Using Iterative Proportional Fitting (IPF)")
     print(f"{'='*80}")
     print(f"\nSHS Clients: {TOTAL_SHS_CLIENTS:,}")
-    print(f"General Population Sample: {TOTAL_GENERAL_POP:,}")
-    print(f"Total: {TOTAL_SHS_CLIENTS + TOTAL_GENERAL_POP:,}")
+    
+    check_col_sums(shs_age_gender, shs_gender, "Age×Gender")
+    check_col_sums(shs_location_gender, shs_gender, "Location×Gender")
+    check_col_sums(shs_drug_gender, shs_gender, "Drug×Gender")
+    check_col_sums(shs_mental_gender, shs_gender, "Mental×Gender")
+    check_col_sums(shs_indigenous_gender, shs_gender, "Indigenous×Gender")
+    check_col_sums(shs_homeless_gender, shs_gender, "Homeless×Gender")
+    check_col_sums(shs_dv_gender, shs_gender, "DV×Gender")
 
     # Step 1: Create seed matrices
     print(f"\n{'='*80}")
@@ -634,10 +442,8 @@ def main():
     print(f"{'='*80}")
 
     df_shs_seed = create_seed_matrix('SHS')
-    df_gen_seed = create_seed_matrix('General')
 
     print(f"SHS seed: {len(df_shs_seed)} combinations")
-    print(f"General seed: {len(df_gen_seed)} combinations")
 
     # Step 2: Prepare marginals
     print(f"\n{'='*80}")
@@ -655,53 +461,40 @@ def main():
         'dv_gender': shs_dv_gender
     }
 
-    gen_marginals = create_general_population_marginals()
-
     print(" SHS marginals prepared")
-    print(" General population marginals prepared")
 
     # Step 3: Run IPF for SHS population
     df_shs_fitted = run_ipf_for_population(df_shs_seed, shs_marginals, 'SHS')
 
-    # Step 4: Run IPF for General population
-    df_gen_fitted = run_ipf_for_population(df_gen_seed, gen_marginals, 'General')
-
-    # Step 5: Expand to individuals
+    # Step 4: Expand to individuals
     print(f"\n{'='*80}")
     print("Step 5: Expanding to individual records")
     print(f"{'='*80}")
 
     df_shs_individuals = expand_to_individuals(df_shs_fitted)
-    df_gen_individuals = expand_to_individuals(df_gen_fitted)
 
     print(f" SHS individuals: {len(df_shs_individuals):,}")
-    print(f" General individuals: {len(df_gen_individuals):,}")
 
-    # Step 6: Combine
+    # Step 5: Create final dataset
     print(f"\n{'='*80}")
-    print("Step 6: Combining populations")
-    print(f"{'='*80}")
+    df_adjusted = df_shs_individuals.copy()
 
-    df_combined = pd.concat([df_shs_individuals, df_gen_individuals], ignore_index=True)
 
-    # Step 7: Apply conditional adjustments
-    df_adjusted = apply_conditional_adjustments(df_combined)
-
-    # Step 8: Shuffle
+    # Step 6: Shuffle
     print("\nShuffling dataset...")
     df_adjusted = df_adjusted.sample(frac=1, random_state=RANDOM_SEED).reset_index(drop=True)
 
     # Print statistics before encoding
     print_statistics(df_adjusted)
 
-    # Step 9: Convert to binary
+    # Step 7: Convert to binary
     print(f"\n{'='*80}")
     print("Step 9: Converting to binary features")
     print(f"{'='*80}")
 
     df_final = convert_to_binary(df_adjusted)
 
-    # Step 10: Save
+    # Step 8: Save
     print(f"\n{'='*80}")
     print("Step 10: Saving dataset")
     print(f"{'='*80}")
