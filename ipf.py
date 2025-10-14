@@ -5,16 +5,9 @@ Synthetic Homelessness Risk Dataset Generation using IPF
 This script generates a synthetic dataset for homelessness risk prediction using
 Iterative Proportional Fitting (IPF) to match real-world demographic patterns.
 
-Key approach:
-1. Creates TWO populations: SHS clients (at-risk) + General population (not at-risk)
-2. Uses different marginal constraints for each population
-3. Respects known correlations (e.g., mental health + drug use overlap)
-4. Applies Australian demographic data from ABS and AIHW sources
-
 Data sources:
 - Australian Bureau of Statistics (ABS) 2024
-- Australian Institute of Health and Welfare (AIHW) SHS 2023-24
-- Your provided SHS client data (June 2025)
+- Australian Institute of Health and Welfare (AIHW) SHS 24
 """
 
 import numpy as np
@@ -40,8 +33,8 @@ RANDOM_SEED = 42
 # REFERENCE RATES (from research)
 # ============================================================================
 
-# Load reference rates from CSV
-ref_rates = pd.read_csv('/Users/arona/Documents/GitHub/Visionary-Model/model/data/ipf_reference_rates.csv')
+# # Load reference rates from CSV
+# ref_rates = pd.read_csv('/Users/arona/Documents/GitHub/Visionary-Model/model/data/ipf_reference_rates.csv')
 
 # ============================================================================
 # SHS CLIENT DATA (June 2025)
