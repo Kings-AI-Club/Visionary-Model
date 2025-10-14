@@ -1,0 +1,55 @@
+variable,category,general_population_rate,shs_at_risk_rate,source,notes
+gender,Male,0.495,0.403,ABS 2024; AIHW SHS 2023-24,General pop approximate
+gender,Female,0.505,0.597,ABS 2024; AIHW SHS 2023-24,General pop approximate
+indigenous,True,0.038,0.290,ABS 2021; AIHW SHS 2023-24,7.6x overrepresentation in SHS
+indigenous,False,0.962,0.710,ABS 2021; AIHW SHS 2023-24,
+mental_health,True,0.215,0.320,ABS NSMHW 2020-22 (ages 16-85); AIHW SHS 2023-24,12-month disorder vs current issue
+mental_health,False,0.785,0.680,ABS NSMHW 2020-22; AIHW SHS 2023-24,
+drug_issue,True,0.033,0.086,ABS NSMHW 2020-22 (substance use disorder); AIHW SHS 2023-24,Problematic use
+drug_issue,False,0.967,0.914,ABS NSMHW 2020-22; AIHW SHS 2023-24,
+age_group,0-14,0.163,0.270,ABS 2024; AIHW SHS 2023-24 (under 18),SHS includes 15-17 in under 18
+age_group,15-24,0.097,0.190,ABS 2024; AIHW SHS 2023-24,
+age_group,25-34,0.082,0.180,ABS 2024; AIHW SHS 2023-24,
+age_group,35-44,0.077,0.180,ABS 2024; AIHW SHS 2023-24,Peak adult SHS group
+age_group,45-54,0.060,0.100,ABS 2024; AIHW SHS 2023-24,Approximate
+age_group,55-64,0.058,0.055,ABS 2024; AIHW SHS 2023-24,Approximate
+age_group,65+,0.170,0.055,ABS 2024; AIHW SHS 2023-24,Underrepresented in SHS
+domestic_violence,Experienced,0.230,0.390,ABS Personal Safety 2021-22 (women lifetime IPV); AIHW SHS 2023-24,General pop is women only; SHS is all genders
+domestic_violence,Not experienced,0.770,0.610,ABS Personal Safety 2021-22; AIHW SHS 2023-24,
+
+conditional_probability,condition,probability,population,source,notes
+mental_health,age_16-24,0.388,General,ABS NSMHW 2020-22,
+mental_health,age_16-24_female,0.455,General,ABS NSMHW 2020-22,
+mental_health,age_16-24_male,0.324,General,ABS NSMHW 2020-22,
+mental_health,age_25-34,0.263,General,ABS NSMHW 2020-22,
+mental_health,ever_homeless,0.391,General,ABS NSMHW 2020-22,2x never homeless rate
+mental_health,never_homeless,0.195,General,ABS NSMHW 2020-22,
+substance_use,male,0.044,General,ABS NSMHW 2020-22,Substance use disorder
+substance_use,female,0.021,General,ABS NSMHW 2020-22,Substance use disorder
+substance_use,age_18-24_cannabis,0.255,General,AIHW NDSHS 2022-23,
+substance_use,indigenous,0.250,General,AIHW NDSHS 2022-23,Any illicit 12-month
+substance_use,non_indigenous,0.186,General,AIHW NDSHS 2022-23,Any illicit 12-month
+drug_and_mental_health,both,0.420,SHS with drug/alcohol issue,AIHW SHS 2023-24,10200 clients
+drug_mental_dv,all_three,0.330,SHS with drug/alcohol issue,AIHW SHS 2023-24,7900 clients
+mental_health_plus,any_other_vulnerability,0.520,SHS with mental health issue,AIHW SHS 2022-23,44300 clients
+indigenous,age_under_15,0.331,Indigenous population,ABS 2021,vs 17.9% non-Indigenous
+indigenous,age_65_plus,0.054,Indigenous population,ABS 2021,vs 17.2% non-Indigenous
+indigenous,median_age,24.0,Indigenous population,ABS 2021,vs 38.3 non-Indigenous
+
+overrepresentation,factor,shs_rate,general_rate,ratio,source
+indigenous,homelessness_services,839.6_per_10k,80.2_per_10k,10.5,AIHW SHS 2023-24
+indigenous,homelessness_census,307_per_10k,35_per_10k,8.8,ABS Census 2021
+indigenous,percentage_shs_clients,0.290,0.038,7.6,AIHW SHS 2023-24
+age_group,under_25_shs,0.460,0.260,1.8,AIHW SHS 2023-24; ABS 2024
+age_group,35-44_shs,0.180,0.077,2.3,AIHW SHS 2023-24; ABS 2024
+mental_health,shs_vs_general,0.320,0.215,1.5,AIHW SHS 2023-24; ABS NSMHW 2020-22
+mental_health,ever_homeless_vs_never,0.391,0.195,2.0,ABS NSMHW 2020-22
+
+population_totals,statistic,value,source,year,notes
+total_population,australia,27200000,ABS,2024,June 2024
+total_population,indigenous,983700,ABS,2021,June 2021 estimate (3.8%)
+shs_clients,total,280078,AIHW SHS,2023-24,
+shs_clients,mental_health,88300,AIHW SHS,2023-24,32% of clients
+shs_clients,drug_alcohol,24100,AIHW SHS,2023-24,8.6% of clients aged 10+
+shs_clients,domestic_violence,109000,AIHW SHS,2023-24,39% of clients
+shs_clients,indigenous,78300,AIHW SHS,2023-24,29% of clients

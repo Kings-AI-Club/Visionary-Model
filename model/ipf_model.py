@@ -38,7 +38,7 @@ print("="*80)
 # 1) Load IPF-generated data
 # ============================================================================
 print("\n1. Loading data...")
-csv_path = Path("../data/synthetic_homelessness_data.csv")
+csv_path = Path("/data/synthetic_shs_clients.csv")
 if not csv_path.exists():
     raise FileNotFoundError(f"Couldn't find {csv_path}. Please run ipf.py first.")
 
