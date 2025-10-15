@@ -12,6 +12,7 @@ Data features:
 - Target: Homeless (binary)
 """
 
+import os
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -19,11 +20,14 @@ from pathlib import Path
 # Core ML
 import tensorflow as tf
 from tensorflow import keras
-from keras import layers
+layers = keras.layers
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
 
+# Use a non-interactive backend so training doesn't block waiting for GUI
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 # Set random seeds for reproducibility
@@ -75,12 +79,35 @@ age_reverse_mapping = {
     70: '65+'
 }
 
-# Convert numeric Age to categorical for one-hot encoding
-X['Age_Category'] = X['Age'].map(age_reverse_mapping)
-print(f"   Age distribution: {X['Age_Category'].value_counts().to_dict()}")
+def age_to_band(age: float) -> str:
+    """Bin raw age into categorical bands consistent with IPF brackets."""
+    if pd.isna(age):
+        return np.nan
+    age = int(age)
+    if age <= 17:
+        return '0-17'
+    elif age <= 24:
+        return '18-24'
+    elif age <= 34:
+        return '25-34'
+    elif age <= 44:
+        return '35-44'
+    elif age <= 54:
+        return '45-54'
+    elif age <= 64:
+        return '55-64'
+    else:
+        return '65+'
 
-# One-hot encode Age (drop_first=False to keep all categories)
-age_dummies = pd.get_dummies(X['Age_Category'], prefix='Age', dtype=int)
+# Convert raw numeric Age into the correct bands
+X['Age_Category'] = X['Age'].apply(age_to_band)
+print(f"   Age band distribution: {X['Age_Category'].value_counts().to_dict()}")
+
+# One-hot encode Age with a fixed category order to ensure consistent columns
+age_categories = ['0-17', '18-24', '25-34', '35-44', '45-54', '55-64', '65+']
+age_dummies = pd.get_dummies(
+    X['Age_Category'], prefix='Age', dtype=int
+).reindex(columns=[f'Age_{c}' for c in age_categories], fill_value=0)
 print(f"   Created {len(age_dummies.columns)} one-hot encoded age features: {list(age_dummies.columns)}")
 
 # Drop original Age columns and add one-hot encoded age features
@@ -129,16 +156,16 @@ def build_model(input_dim):
     """Build a feedforward neural network for binary classification"""
     model = keras.Sequential([
         layers.Input(shape=(input_dim,)),
-        layers.Dense(64, activation='relu', kernel_regularizer=keras.regularizers.l2(0.001)),
+        layers.Dense(64, activation='relu', kernel_regularizer=keras.regularizers.l2(1e-4)),
         layers.Dropout(0.3),
-        layers.Dense(32, activation='relu', kernel_regularizer=keras.regularizers.l2(0.001)),
+        layers.Dense(32, activation='relu', kernel_regularizer=keras.regularizers.l2(1e-4)),
         layers.Dropout(0.2),
         layers.Dense(16, activation='relu'),
         layers.Dense(1, activation='sigmoid')
     ])
 
     model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=0.0001),
+        optimizer=keras.optimizers.Adam(learning_rate=1e-3),
         loss='binary_crossentropy',
         metrics=['accuracy', keras.metrics.AUC(name='auc')]
     )
@@ -178,11 +205,15 @@ X_val_array = X_val_scaled.values
 X_test_array = X_test_scaled.values
 
 # Train
+# Allow quick iteration control via env var
+EPOCHS = int(os.getenv('EPOCHS', '100'))
+BATCH_SIZE = int(os.getenv('BATCH_SIZE', '256'))
+
 history = model.fit(
     X_train_array, y_train,
     validation_data=(X_val_array, y_val),
     epochs=100,
-    batch_size=256,
+    batch_size=BATCH_SIZE,
     callbacks=[early_stopping, reduce_lr],
     verbose=1
 )
@@ -268,9 +299,15 @@ axes[2].legend()
 axes[2].grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig('training_history.png', dpi=150, bbox_inches='tight')
-print("   Saved training plots to: training_history.png")
-plt.show()
+
+# Save plot to a stable, accessible path without opening a window
+fig_dir = Path('model/figures')
+fig_dir.mkdir(parents=True, exist_ok=True)
+fig_path = fig_dir / 'figure_1_training_history.png'
+plt.savefig(fig_path, dpi=150, bbox_inches='tight')
+print(f"   Saved training plot to: {fig_path}")
+
+# Do not call plt.show() to avoid blocking interactive close
 
 # ============================================================================
 # 9) Save model
@@ -283,5 +320,3 @@ print("   Note: No scaler needed - all features are binary/one-hot encoded")
 print("\n" + "="*80)
 print("TRAINING COMPLETE!")
 print("="*80)
-
-
