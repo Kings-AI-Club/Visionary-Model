@@ -214,6 +214,25 @@ agg_age_mental        = shs_age_mental.loc[A, M].values                         
 agg_age_drug          = shs_age_drug.loc[A, D].values                                # A×D
 agg_age_dv            = shs_age_dv.loc[A, V].values                                  # A×V
 
+# NEW: Derived Age × Homeless marginal to inject learnable signal for target
+age_totals = shs_age_gender.sum(axis=1)  # totals per age band
+h_totals = shs_homeless_gender.sum(axis=1)  # ['Homeless','Not_Homeless']
+# Tunable relative risk by age band (domain-informed shape)
+age_risk_weights = pd.Series({
+    '0-17': 0.60,
+    '18-24': 0.90,
+    '25-34': 1.05,
+    '35-44': 1.20,
+    '45-54': 1.15,
+    '55-64': 1.00,
+    '65+': 0.80,
+})
+weighted = age_totals.mul(age_risk_weights)
+homeless_age = weighted / weighted.sum() * float(h_totals.loc['Homeless'])
+not_homeless_age = age_totals - homeless_age
+shs_age_homeless = pd.DataFrame({'Homeless': homeless_age, 'Not_Homeless': not_homeless_age})
+agg_age_home          = shs_age_homeless.loc[A, H].values                              # A×H
+
 aggregates = [
     # agg_gender,            # [G]
     agg_gender_age,        # [G,A]
@@ -229,6 +248,7 @@ aggregates = [
     agg_age_mental,        # [A,M]
     agg_age_drug,          # [A,D]
     agg_age_dv,            # [A,V]
+    agg_age_home,          # [A,H]
 ]
 
 # Axis mapping: 0=G,1=A,2=L,3=D,4=M,5=I,6=V,7=H
@@ -247,6 +267,7 @@ dims = [
     [1,4],    # A×M
     [1,3],    # A×D
     [1,6],    # A×V
+    [1,7],    # A×H (Age × Homeless)
 ]
 
 # --- 4) Fit with IPF ---
@@ -321,6 +342,7 @@ checks = {
     'Age×Gender':        (['age'],        ['gender'], shs_age_gender),
     'Location×Gender':   (['location'],   ['gender'], shs_location_gender),
     'Homeless×Gender':   (['homeless'],   ['gender'], shs_homeless_gender),
+    'Age×Homeless':      (['age'],        ['homeless'], shs_age_homeless),
     # NEW: Age-based cross-tabs
     'Age×Indigenous':    (['age'],        ['indigenous'], shs_age_indigenous),
     'Age×Mental':        (['age'],        ['mental'], shs_age_mental),
@@ -376,7 +398,7 @@ cols = [
 df_out = df[cols]
 
 # Save to CSV
-output_path = Path("synthetic_homelessness.csv")
+output_path = Path("model/data/synthetic_homelessness_data.csv")
 df_out.to_csv(output_path, index=False)
 print(f"\n✅ Synthetic dataset saved to: {output_path.resolve()}")
 print(df_out.head())
