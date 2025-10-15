@@ -38,7 +38,7 @@ print("="*80)
 # 1) Load IPF-generated data
 # ============================================================================
 print("\n1. Loading data...")
-csv_path = Path("data/synthetic_homelessness_data.csv")
+csv_path = Path("/Users/arona/Documents/GitHub/Visionary-Model/model/data/synthetic_homelessness_data.csv")
 if not csv_path.exists():
     raise FileNotFoundError(f"Couldn't find {csv_path}. Please run ipf.py first.")
 
@@ -138,7 +138,7 @@ def build_model(input_dim):
     ])
 
     model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=0.001),
+        optimizer=keras.optimizers.Adam(learning_rate=0.0001),
         loss='binary_crossentropy',
         metrics=['accuracy', keras.metrics.AUC(name='auc')]
     )
@@ -181,7 +181,7 @@ X_test_array = X_test_scaled.values
 history = model.fit(
     X_train_array, y_train,
     validation_data=(X_val_array, y_val),
-    epochs=15,
+    epochs=100,
     batch_size=256,
     callbacks=[early_stopping, reduce_lr],
     verbose=1
