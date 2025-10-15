@@ -110,7 +110,7 @@ agg_dv_gender         = shs_dv_gender.loc[V, G].values                          
 agg_home_gender       = shs_homeless_gender.loc[H, G].values                        # H×G
 
 aggregates = [
-    agg_gender,            # [G]
+    # agg_gender,            # [G]
     agg_age_gender,        # [A,G]
     agg_loc_gender,        # [L,G]
     agg_drug_gender,       # [D,G]
@@ -122,7 +122,7 @@ aggregates = [
 
 # Axis mapping: 0=G,1=A,2=L,3=D,4=M,5=I,6=V,7=H
 dims = [
-    [0],      # G
+    # [0],      # G
     [1,0],    # A×G
     [2,0],    # L×G
     [3,0],    # D×G
@@ -133,7 +133,7 @@ dims = [
 ]
 
 # --- 4) Fit with IPF ---
-ipf = ipfn.ipfn(X0, aggregates, dims, max_iteration=500, verbose=2, rate_tolerance=0, convergence_rate=1e-8)
+ipf = ipfn.ipfn(X0, aggregates, dims, max_iteration=500, verbose=2, rate_tolerance=-0.11, convergence_rate=1e-8)
 
 res = ipf.iteration()
 

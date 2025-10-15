@@ -33,8 +33,8 @@ RANDOM_SEED = 42
 # REFERENCE RATES (from research)
 # ============================================================================
 
-# Load reference rates from CSV
-ref_rates = pd.read_csv('/Users/arona/Documents/GitHub/Visionary-Model/model/data/ipf_reference_rates.csv')
+# # Load reference rates from CSV
+# ref_rates = pd.read_csv('/Users/arona/Documents/GitHub/Visionary-Model/model/data/ipf_reference_rates.csv')
 
 # ============================================================================
 # SHS CLIENT DATA (June 2025)

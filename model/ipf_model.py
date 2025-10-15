@@ -19,7 +19,7 @@ from pathlib import Path
 # Core ML
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras import layers
+from keras import layers
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
@@ -38,7 +38,7 @@ print("="*80)
 # 1) Load IPF-generated data
 # ============================================================================
 print("\n1. Loading data...")
-csv_path = Path("/data/synthetic_shs_clients.csv")
+csv_path = Path("data/synthetic_homelessness_data.csv")
 if not csv_path.exists():
     raise FileNotFoundError(f"Couldn't find {csv_path}. Please run ipf.py first.")
 
@@ -138,7 +138,7 @@ def build_model(input_dim):
     ])
 
     model.compile(
-        optimizer=keras.optimizers.legacy.Adam(learning_rate=0.001),
+        optimizer=keras.optimizers.Adam(learning_rate=0.001),
         loss='binary_crossentropy',
         metrics=['accuracy', keras.metrics.AUC(name='auc')]
     )
