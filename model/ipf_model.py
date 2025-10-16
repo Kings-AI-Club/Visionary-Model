@@ -153,19 +153,28 @@ print(f"   All features are binary/one-hot encoded (no scaling required)")
 print("\n5. Building FNN model...")
 
 def build_model(input_dim):
-    """Build a feedforward neural network for binary classification"""
-    model = keras.Sequential([
-        layers.Input(shape=(input_dim,)),
-        layers.Dense(64, activation='relu', kernel_regularizer=keras.regularizers.l2(1e-4)),
-        layers.Dropout(0.3),
-        layers.Dense(32, activation='relu', kernel_regularizer=keras.regularizers.l2(1e-4)),
-        layers.Dropout(0.2),
-        layers.Dense(16, activation='relu'),
-        layers.Dense(1, activation='sigmoid')
-    ])
+    """Build classifier. Default to logistic for higher accuracy on synth_weights."""
+    model_type = os.getenv('MODEL_TYPE', 'logistic').lower()
+    if model_type == 'logistic':
+        model = keras.Sequential([
+            layers.Input(shape=(input_dim,)),
+            layers.Dense(1, activation='sigmoid')
+        ])
+        lr = float(os.getenv('LR', '2e-3'))
+    else:
+        model = keras.Sequential([
+            layers.Input(shape=(input_dim,)),
+            layers.Dense(128, activation='relu'),
+            layers.Dropout(0.15),
+            layers.Dense(64, activation='relu'),
+            layers.Dropout(0.15),
+            layers.Dense(32, activation='relu'),
+            layers.Dense(1, activation='sigmoid')
+        ])
+        lr = float(os.getenv('LR', '1e-3'))
 
     model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=1e-3),
+        optimizer=keras.optimizers.Adam(learning_rate=lr),
         loss='binary_crossentropy',
         metrics=['accuracy', keras.metrics.AUC(name='auc')]
     )
@@ -212,7 +221,7 @@ BATCH_SIZE = int(os.getenv('BATCH_SIZE', '256'))
 history = model.fit(
     X_train_array, y_train,
     validation_data=(X_val_array, y_val),
-    epochs=100,
+    epochs=EPOCHS,
     batch_size=BATCH_SIZE,
     callbacks=[early_stopping, reduce_lr],
     verbose=1
@@ -246,9 +255,18 @@ print(f"   Loss: {test_loss:.4f}")
 print(f"   Accuracy: {test_acc:.4f}")
 print(f"   AUC: {test_auc:.4f}")
 
-# Predictions on test set
+# Calibrate decision threshold on validation to maximize accuracy
+y_val_proba = model.predict(X_val_array, verbose=0).flatten()
+best_thr, best_acc = 0.5, 0.0
+for t in np.linspace(0.05, 0.95, 181):
+    acc = ((y_val_proba > t).astype(int) == y_val).mean()
+    if acc > best_acc:
+        best_acc, best_thr = acc, t
+print(f"\nCalibrated threshold (validation): {best_thr:.3f} (val acc={best_acc:.4f})")
+
+# Predictions on test set using calibrated threshold
 y_pred_proba = model.predict(X_test_array, verbose=0).flatten()
-y_pred = (y_pred_proba > 0.5).astype(int)
+y_pred = (y_pred_proba > best_thr).astype(int)
 
 print(f"\n" + "="*80)
 print("CLASSIFICATION REPORT (Test Set)")
