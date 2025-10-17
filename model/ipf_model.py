@@ -25,6 +25,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
 
+from focal_loss import BinaryFocalLoss
+
 # Use a non-interactive backend so training doesn't block waiting for GUI
 import matplotlib
 matplotlib.use('Agg')
@@ -175,7 +177,7 @@ def build_model(input_dim):
 
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate=lr),
-        loss='binary_crossentropy',
+        loss=keras.losses.Tversky(alpha=0.1, beta=0.9, name="tversky"),
         metrics=['accuracy', keras.metrics.AUC(name='auc')]
     )
 
@@ -215,7 +217,7 @@ X_test_array = X_test_scaled.values
 
 # Train
 # Allow quick iteration control via env var
-EPOCHS = int(os.getenv('EPOCHS', '100'))
+EPOCHS = int(os.getenv('EPOCHS', '41'))
 BATCH_SIZE = int(os.getenv('BATCH_SIZE', '256'))
 
 history = model.fit(
