@@ -1,9 +1,17 @@
 """
 TensorFlow Keras FNN for Homelessness Risk Prediction
-======================================================
-Trains on IPF-generated synthetic data with realistic demographic patterns.
+=====================================================
 
-Data features:
+Professionalized training script for IPF-generated synthetic data. This module
+provides a clean, typed, and configurable pipeline to:
+- load and validate data,
+- preprocess features (age banding + one-hot),
+- build either a logistic baseline or an FNN classifier,
+- train with callbacks,
+- calibrate a decision threshold on validation,
+- evaluate and save artifacts (plots, metrics, model).
+
+Data features expected:
 - Gender (binary)
 - Age (one-hot encoded: 7 age ranges from 0-17 to 65+)
 - Drug, Mental, Indigenous, DV (binary risk factors)
@@ -12,157 +20,183 @@ Data features:
 - Target: Homeless (binary)
 """
 
+from __future__ import annotations
+
+import json
+import logging
 import os
-import pandas as pd
-import numpy as np
+from dataclasses import dataclass, asdict
 from pathlib import Path
+from typing import Dict, Iterable, List, Tuple
+
+import numpy as np
+import pandas as pd
 
 # Core ML
 import tensorflow as tf
 from tensorflow import keras
 layers = keras.layers
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+from sklearn.metrics import classification_report, confusion_matrix
 
-from focal_loss import BinaryFocalLoss
+# Optional focal loss (if selected via config)
+try:
+    from focal_loss import BinaryFocalLoss  # noqa: F401
+except Exception:  # pragma: no cover - optional dependency
+    BinaryFocalLoss = None  # type: ignore
 
 # Use a non-interactive backend so training doesn't block waiting for GUI
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-# Set random seeds for reproducibility
-np.random.seed(42)
-tf.random.set_seed(42)
 
-print("="*80)
-print("HOMELESSNESS RISK PREDICTION MODEL")
-print("="*80)
+# --------------------------------------------------------------------------------------
+# Logging
+# --------------------------------------------------------------------------------------
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+)
 
-# ============================================================================
-# 1) Load IPF-generated data
-# ============================================================================
-print("\n1. Loading data...")
-csv_path = Path("/Users/arona/Documents/GitHub/Visionary-Model/model/data/synthetic_homelessness_data.csv")
-if not csv_path.exists():
-    raise FileNotFoundError(f"Couldn't find {csv_path}. Please run ipf.py first.")
 
-df = pd.read_csv(csv_path)
-print(f"   Loaded {len(df):,} samples")
-print(f"   Features: {df.shape[1]-1}")
+# --------------------------------------------------------------------------------------
+# Configuration
+# --------------------------------------------------------------------------------------
+@dataclass
+class TrainConfig:
+    data_paths: List[Path]
+    model_type: str = os.environ.get("MODEL_TYPE", "fnn").lower()  # 'logistic' or 'fnn'
+    learning_rate: float = float(os.environ.get("LR", "1e-3"))
+    epochs: int = int(os.environ.get("EPOCHS", "40"))
+    batch_size: int = int(os.environ.get("BATCH_SIZE", "256"))
+    loss: str = os.environ.get("LOSS", "tversky").lower()  # 'tversky'|'bce'|'focal'
+    figures_dir: Path = Path("model/figures")
+    artifacts_dir: Path = Path("model/artifacts")
+    model_path: Path = Path("homelessness_risk_model.h5")
+    seed: int = int(os.environ.get("SEED", "42"))
 
-# ============================================================================
-# 2) Prepare features and target
-# ============================================================================
-print("\n2. Preparing features and target...")
 
-# Target variable
-y = df['Homeless'].values
-print(f"   Target distribution: {y.sum():,} homeless ({y.mean()*100:.1f}%), {(~y.astype(bool)).sum():,} not homeless ({(1-y.mean())*100:.1f}%)")
+def default_config() -> TrainConfig:
+    candidates = [
+        Path("model/data/synthetic_homelessness_data.csv"),
+        Path("data/synthetic_homelessness_data.csv"),
+        Path("synthetic-data/data/synthetic_homelessness_data.csv"),
+    ]
+    return TrainConfig(data_paths=candidates)
 
-# Features
-feature_cols = [col for col in df.columns if col != 'Homeless']
-X = df[feature_cols].copy()
 
-# Convert all boolean columns to int (for TensorFlow compatibility)
-for col in X.columns:
-    if X[col].dtype == bool:
-        X[col] = X[col].astype(int)
+# --------------------------------------------------------------------------------------
+# Data loading and preprocessing
+# --------------------------------------------------------------------------------------
+AGE_CATEGORIES: List[str] = ['0-17', '18-24', '25-34', '35-44', '45-54', '55-64', '65+']
 
-# Reverse mapping: numeric age -> categorical age range
-age_reverse_mapping = {
-    10: '0-17',
-    21: '18-24',
-    30: '25-34',
-    40: '35-44',
-    50: '45-54',
-    60: '55-64',
-    70: '65+'
-}
+
+def set_seeds(seed: int) -> None:
+    np.random.seed(seed)
+    tf.random.set_seed(seed)
+
+
+def resolve_data_path(candidates: Iterable[Path]) -> Path:
+    for p in candidates:
+        if p.exists():
+            return p
+    raise FileNotFoundError(
+        f"Could not find dataset. Tried: {', '.join(map(str, candidates))}. "
+        "If you generated it elsewhere, set DATA_PATH env var or move the file."
+    )
+
+
+def load_data(cfg: TrainConfig) -> pd.DataFrame:
+    env_path = os.environ.get("DATA_PATH")
+    csv_path = Path(env_path) if env_path else resolve_data_path(cfg.data_paths)
+    logger.info("Loading data from %s", csv_path)
+    df = pd.read_csv(csv_path)
+    logger.info("Loaded %s samples, %s columns", f"{len(df):,}", df.shape[1])
+    return df
+
 
 def age_to_band(age: float) -> str:
-    """Bin raw age into categorical bands consistent with IPF brackets."""
     if pd.isna(age):
-        return np.nan
+        return np.nan  # type: ignore[return-value]
     age = int(age)
     if age <= 17:
         return '0-17'
-    elif age <= 24:
+    if age <= 24:
         return '18-24'
-    elif age <= 34:
+    if age <= 34:
         return '25-34'
-    elif age <= 44:
+    if age <= 44:
         return '35-44'
-    elif age <= 54:
+    if age <= 54:
         return '45-54'
-    elif age <= 64:
+    if age <= 64:
         return '55-64'
-    else:
-        return '65+'
+    return '65+'
 
-# Convert raw numeric Age into the correct bands
-X['Age_Category'] = X['Age'].apply(age_to_band)
-print(f"   Age band distribution: {X['Age_Category'].value_counts().to_dict()}")
 
-# One-hot encode Age with a fixed category order to ensure consistent columns
-age_categories = ['0-17', '18-24', '25-34', '35-44', '45-54', '55-64', '65+']
-age_dummies = pd.get_dummies(
-    X['Age_Category'], prefix='Age', dtype=int
-).reindex(columns=[f'Age_{c}' for c in age_categories], fill_value=0)
-print(f"   Created {len(age_dummies.columns)} one-hot encoded age features: {list(age_dummies.columns)}")
+def preprocess(df: pd.DataFrame) -> Tuple[pd.DataFrame, np.ndarray]:
+    if 'Homeless' not in df.columns:
+        raise ValueError("Expected 'Homeless' column in dataset")
 
-# Drop original Age columns and add one-hot encoded age features
-X = X.drop(['Age', 'Age_Category'], axis=1)
-X = pd.concat([X, age_dummies], axis=1)
+    y = df['Homeless'].values
+    logger.info(
+        "Target prevalence: %.1f%% homeless (%s of %s)",
+        y.mean() * 100,
+        f"{y.sum():,}",
+        f"{len(y):,}",
+    )
 
-print(f"   Total features after encoding ({len(X.columns)}): {list(X.columns)}")
+    feature_cols = [c for c in df.columns if c != 'Homeless']
+    X = df[feature_cols].copy()
 
-# ============================================================================
-# 3) Train/validation/test split
-# ============================================================================
-print("\n3. Splitting data...")
+    for col in X.columns:
+        if X[col].dtype == bool:
+            X[col] = X[col].astype(int)
 
-# First split: 80% train, 20% temp
-X_train, X_temp, y_train, y_temp = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
-)
+    if 'Age' not in X.columns:
+        raise ValueError("Expected numeric 'Age' column before banding")
 
-# Second split: 10% validation, 10% test
-X_val, X_test, y_val, y_test = train_test_split(
-    X_temp, y_temp, test_size=0.5, random_state=42, stratify=y_temp
-)
+    X['Age_Category'] = X['Age'].apply(age_to_band)
+    logger.info("Age bands: %s", X['Age_Category'].value_counts().to_dict())
 
-print(f"   Train: {len(X_train):,} samples")
-print(f"   Validation: {len(X_val):,} samples")
-print(f"   Test: {len(X_test):,} samples")
+    age_dummies = pd.get_dummies(X['Age_Category'], prefix='Age', dtype=int)
+    age_dummies = age_dummies.reindex(
+        columns=[f'Age_{c}' for c in AGE_CATEGORIES], fill_value=0
+    )
+    X = X.drop(['Age', 'Age_Category'], axis=1)
+    X = pd.concat([X, age_dummies], axis=1)
 
-# ============================================================================
-# 4) Feature scaling (optional - all features are now binary/one-hot encoded)
-# ============================================================================
-print("\n4. Preparing features for model...")
+    logger.info("Total features after encoding (%d)", len(X.columns))
+    return X, y
 
-# No scaling needed - all features are binary or one-hot encoded
-X_train_scaled = X_train.copy()
-X_val_scaled = X_val.copy()
-X_test_scaled = X_test.copy()
 
-print(f"   All features are binary/one-hot encoded (no scaling required)")
+def split_data(X: pd.DataFrame, y: np.ndarray, seed: int) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray, np.ndarray]:
+    X_train, X_temp, y_train, y_temp = train_test_split(
+        X, y, test_size=0.2, random_state=seed, stratify=y
+    )
+    X_val, X_test, y_val, y_test = train_test_split(
+        X_temp, y_temp, test_size=0.5, random_state=seed, stratify=y_temp
+    )
+    logger.info(
+        "Split sizes -> train: %s, val: %s, test: %s",
+        f"{len(X_train):,}", f"{len(X_val):,}", f"{len(X_test):,}"
+    )
+    return X_train, X_val, X_test, y_train, y_val, y_test
 
-# ============================================================================
-# 5) Build FNN model
-# ============================================================================
-print("\n5. Building FNN model...")
 
-def build_model(input_dim):
-    """Build classifier. Default to logistic for higher accuracy on synth_weights."""
-    model_type = os.getenv('MODEL_TYPE', 'logistic').lower()
+# --------------------------------------------------------------------------------------
+# Model
+# --------------------------------------------------------------------------------------
+def build_model(input_dim: int, cfg: TrainConfig) -> keras.Model:
+    model_type = cfg.model_type
     if model_type == 'logistic':
         model = keras.Sequential([
             layers.Input(shape=(input_dim,)),
             layers.Dense(1, activation='sigmoid')
         ])
-        lr = float(os.getenv('LR', '2e-3'))
+        lr = float(os.environ.get('LR', cfg.learning_rate))
     else:
         model = keras.Sequential([
             layers.Input(shape=(input_dim,)),
@@ -173,170 +207,165 @@ def build_model(input_dim):
             layers.Dense(32, activation='relu'),
             layers.Dense(1, activation='sigmoid')
         ])
-        lr = float(os.getenv('LR', '1e-3'))
+        lr = float(os.environ.get('LR', cfg.learning_rate))
+
+    loss_name = cfg.loss
+    if loss_name == 'bce':
+        loss = keras.losses.BinaryCrossentropy()
+    elif loss_name == 'focal':
+        if BinaryFocalLoss is None:
+            logger.warning("BinaryFocalLoss not available; falling back to BCE")
+            loss = keras.losses.BinaryCrossentropy()
+        else:
+            loss = BinaryFocalLoss(gamma=2.0)
+    else:  # default to tversky if available
+        try:
+            loss = keras.losses.Tversky(alpha=0.1, beta=0.9, name="tversky")
+        except Exception:  # pragma: no cover
+            logger.warning("Tversky loss unavailable; falling back to BCE")
+            loss = keras.losses.BinaryCrossentropy()
 
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate=lr),
-        loss=keras.losses.Tversky(alpha=0.1, beta=0.9, name="tversky"),
+        loss=loss,
         metrics=['accuracy', keras.metrics.AUC(name='auc')]
     )
-
     return model
 
-input_dim = X_train_scaled.shape[1]
-model = build_model(input_dim)
 
-print(f"   Model architecture:")
-model.summary()
+def calibrate_threshold(y_true: np.ndarray, y_proba: np.ndarray) -> Tuple[float, float]:
+    best_thr, best_acc = 0.5, 0.0
+    for t in np.linspace(0.05, 0.95, 181):
+        acc = ((y_proba > t).astype(int) == y_true).mean()
+        if acc > best_acc:
+            best_acc, best_thr = acc, t
+    return best_thr, best_acc
 
-# ============================================================================
-# 6) Train model
-# ============================================================================
-print("\n6. Training model...")
 
-# Callbacks
-early_stopping = keras.callbacks.EarlyStopping(
-    monitor='val_loss',
-    patience=10,
-    restore_best_weights=True,
-    verbose=1
-)
+# --------------------------------------------------------------------------------------
+# Training & Evaluation
+# --------------------------------------------------------------------------------------
+def train_and_evaluate(cfg: TrainConfig) -> Dict[str, float]:
+    set_seeds(cfg.seed)
 
-reduce_lr = keras.callbacks.ReduceLROnPlateau(
-    monitor='val_loss',
-    factor=0.5,
-    patience=5,
-    verbose=1,
-    min_lr=1e-6
-)
+    df = load_data(cfg)
+    X, y = preprocess(df)
+    X_train, X_val, X_test, y_train, y_val, y_test = split_data(X, y, cfg.seed)
 
-# Convert to numpy arrays for TensorFlow
-X_train_array = X_train_scaled.values
-X_val_array = X_val_scaled.values
-X_test_array = X_test_scaled.values
+    X_train_array = X_train.values
+    X_val_array = X_val.values
+    X_test_array = X_test.values
 
-# Train
-# Allow quick iteration control via env var
-EPOCHS = int(os.getenv('EPOCHS', '41'))
-BATCH_SIZE = int(os.getenv('BATCH_SIZE', '256'))
+    model = build_model(X_train_array.shape[1], cfg)
+    logger.info("Model architecture:")
+    model.summary(print_fn=lambda s: logger.info(s))
 
-history = model.fit(
-    X_train_array, y_train,
-    validation_data=(X_val_array, y_val),
-    epochs=EPOCHS,
-    batch_size=BATCH_SIZE,
-    callbacks=[early_stopping, reduce_lr],
-    verbose=1
-)
 
-# ============================================================================
-# 7) Evaluate model
-# ============================================================================
-print("\n" + "="*80)
-print("7. MODEL EVALUATION")
-print("="*80)
+    early_stopping = keras.callbacks.EarlyStopping(
+        monitor='val_loss', patience=10, restore_best_weights=True, verbose=1
+    )
+    reduce_lr = keras.callbacks.ReduceLROnPlateau(
+        monitor='val_loss', factor=0.5, patience=5, verbose=1, min_lr=1e-6
+    )
 
-# Training set
-train_loss, train_acc, train_auc = model.evaluate(X_train_array, y_train, verbose=0)
-print(f"\nTraining Set:")
-print(f"   Loss: {train_loss:.4f}")
-print(f"   Accuracy: {train_acc:.4f}")
-print(f"   AUC: {train_auc:.4f}")
+    history = model.fit(
+        X_train_array, y_train,
+        validation_data=(X_val_array, y_val),
+        epochs=cfg.epochs,
+        batch_size=cfg.batch_size,
+        callbacks=[early_stopping, reduce_lr],
+        verbose=1
+    )
 
-# Validation set
-val_loss, val_acc, val_auc = model.evaluate(X_val_array, y_val, verbose=0)
-print(f"\nValidation Set:")
-print(f"   Loss: {val_loss:.4f}")
-print(f"   Accuracy: {val_acc:.4f}")
-print(f"   AUC: {val_auc:.4f}")
+    # Evaluate
+    train_loss, train_acc, train_auc = model.evaluate(X_train_array, y_train, verbose=0)
+    val_loss, val_acc, val_auc = model.evaluate(X_val_array, y_val, verbose=0)
+    test_loss, test_acc, test_auc = model.evaluate(X_test_array, y_test, verbose=0)
 
-# Test set (final evaluation)
-test_loss, test_acc, test_auc = model.evaluate(X_test_array, y_test, verbose=0)
-print(f"\nTest Set:")
-print(f"   Loss: {test_loss:.4f}")
-print(f"   Accuracy: {test_acc:.4f}")
-print(f"   AUC: {test_auc:.4f}")
+    y_val_proba = model.predict(X_val_array, verbose=0).flatten()
+    best_thr, best_acc = calibrate_threshold(y_val, y_val_proba)
+    logger.info("Calibrated threshold: %.3f (val acc=%.4f)", best_thr, best_acc)
 
-# Calibrate decision threshold on validation to maximize accuracy
-y_val_proba = model.predict(X_val_array, verbose=0).flatten()
-best_thr, best_acc = 0.5, 0.0
-for t in np.linspace(0.05, 0.95, 181):
-    acc = ((y_val_proba > t).astype(int) == y_val).mean()
-    if acc > best_acc:
-        best_acc, best_thr = acc, t
-print(f"\nCalibrated threshold (validation): {best_thr:.3f} (val acc={best_acc:.4f})")
+    y_pred_proba = model.predict(X_test_array, verbose=0).flatten()
+    y_pred = (y_pred_proba > best_thr).astype(int)
 
-# Predictions on test set using calibrated threshold
-y_pred_proba = model.predict(X_test_array, verbose=0).flatten()
-y_pred = (y_pred_proba > best_thr).astype(int)
+    logger.info("\n%s\n%s\n%s", "=" * 80, "CLASSIFICATION REPORT (Test)", "=" * 80)
+    logger.info("\n%s", classification_report(y_test, y_pred, target_names=['Not Homeless', 'Homeless']))
+    cm = confusion_matrix(y_test, y_pred)
+    logger.info("Confusion matrix:\n%s", cm)
 
-print(f"\n" + "="*80)
-print("CLASSIFICATION REPORT (Test Set)")
-print("="*80)
-print(classification_report(y_test, y_pred, target_names=['Not Homeless', 'Homeless']))
+    # Plot history
+    cfg.figures_dir.mkdir(parents=True, exist_ok=True)
+    fig_path = cfg.figures_dir / 'figure_1_training_history.png'
+    _plot_history(history, fig_path)
+    logger.info("Saved training plot to: %s", fig_path)
 
-print(f"\n" + "="*80)
-print("CONFUSION MATRIX (Test Set)")
-print("="*80)
-cm = confusion_matrix(y_test, y_pred)
-print(f"              Predicted")
-print(f"              Not Homeless  Homeless")
-print(f"Actual Not Homeless    {cm[0,0]:8d}    {cm[0,1]:8d}")
-print(f"       Homeless        {cm[1,0]:8d}    {cm[1,1]:8d}")
+    # Save model and metrics
+    cfg.artifacts_dir.mkdir(parents=True, exist_ok=True)
+    model.save(cfg.model_path)
+    logger.info("Saved model to: %s", cfg.model_path)
 
-# ============================================================================
-# 8) Plot training history
-# ============================================================================
-print("\n8. Generating training plots...")
+    metrics = {
+        "train_loss": float(train_loss),
+        "train_acc": float(train_acc),
+        "train_auc": float(train_auc),
+        "val_loss": float(val_loss),
+        "val_acc": float(val_acc),
+        "val_auc": float(val_auc),
+        "test_loss": float(test_loss),
+        "test_acc": float(test_acc),
+        "test_auc": float(test_auc),
+        "threshold": float(best_thr),
+        "threshold_val_acc": float(best_acc),
+    }
+    with open(cfg.artifacts_dir / "metrics.json", "w") as f:
+        json.dump(metrics, f, indent=2)
+    with open(cfg.artifacts_dir / "config.json", "w") as f:
+        json.dump(asdict(cfg), f, indent=2, default=str)
 
-fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+    return metrics
 
-# Accuracy
-axes[0].plot(history.history['accuracy'], label='Train')
-axes[0].plot(history.history['val_accuracy'], label='Validation')
-axes[0].set_xlabel('Epoch')
-axes[0].set_ylabel('Accuracy')
-axes[0].set_title('Model Accuracy')
-axes[0].legend()
-axes[0].grid(True, alpha=0.3)
 
-# Loss
-axes[1].plot(history.history['loss'], label='Train')
-axes[1].plot(history.history['val_loss'], label='Validation')
-axes[1].set_xlabel('Epoch')
-axes[1].set_ylabel('Loss')
-axes[1].set_title('Model Loss')
-axes[1].legend()
-axes[1].grid(True, alpha=0.3)
+def _plot_history(history: keras.callbacks.History, out_path: Path) -> None:
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
-# AUC
-axes[2].plot(history.history['auc'], label='Train')
-axes[2].plot(history.history['val_auc'], label='Validation')
-axes[2].set_xlabel('Epoch')
-axes[2].set_ylabel('AUC')
-axes[2].set_title('Model AUC')
-axes[2].legend()
-axes[2].grid(True, alpha=0.3)
+    axes[0].plot(history.history['accuracy'], label='Train')
+    axes[0].plot(history.history['val_accuracy'], label='Validation')
+    axes[0].set_xlabel('Epoch')
+    axes[0].set_ylabel('Accuracy')
+    axes[0].set_title('Model Accuracy')
+    axes[0].legend()
+    axes[0].grid(True, alpha=0.3)
 
-plt.tight_layout()
+    axes[1].plot(history.history['loss'], label='Train')
+    axes[1].plot(history.history['val_loss'], label='Validation')
+    axes[1].set_xlabel('Epoch')
+    axes[1].set_ylabel('Loss')
+    axes[1].set_title('Model Loss')
+    axes[1].legend()
+    axes[1].grid(True, alpha=0.3)
 
-# Save plot to a stable, accessible path without opening a window
-fig_dir = Path('model/figures')
-fig_dir.mkdir(parents=True, exist_ok=True)
-fig_path = fig_dir / 'figure_1_training_history.png'
-plt.savefig(fig_path, dpi=150, bbox_inches='tight')
-print(f"   Saved training plot to: {fig_path}")
+    axes[2].plot(history.history['auc'], label='Train')
+    axes[2].plot(history.history['val_auc'], label='Validation')
+    axes[2].set_xlabel('Epoch')
+    axes[2].set_ylabel('AUC')
+    axes[2].set_title('Model AUC')
+    axes[2].legend()
+    axes[2].grid(True, alpha=0.3)
 
-# Do not call plt.show() to avoid blocking interactive close
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
 
-# ============================================================================
-# 9) Save model
-# ============================================================================
-print("\n9. Saving model...")
-model.save('homelessness_risk_model.h5')
-print("   Model saved to: homelessness_risk_model.h5")
-print("   Note: No scaler needed - all features are binary/one-hot encoded")
 
-print("\n" + "="*80)
-print("TRAINING COMPLETE!")
-print("="*80)
+def main() -> None:
+    logger.info("%s", "=" * 80)
+    logger.info("HOMELESSNESS RISK PREDICTION MODEL")
+    logger.info("%s", "=" * 80)
+    cfg = default_config()
+    metrics = train_and_evaluate(cfg)
+    logger.info("Training complete. Key metrics: %s", metrics)
+
+
+if __name__ == "__main__":
+    main()
